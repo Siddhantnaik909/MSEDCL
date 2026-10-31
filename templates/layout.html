@@ -47,41 +47,48 @@
 
     <nav class="sidebar-nav">
       {% if user.role in ('viewer', 'advisor') %}
-        <!-- Dedicated Advisor Workspace Menu (Strictly Personal Data Only) -->
-        <div class="nav-section-title">My Workspace</div>
+        <!-- Employee Restricted Navigation -->
+        <a href="{{ url_for('my_profile') }}" class="nav-item {{ 'active' if page=='my_profile' else '' }}" title="My Profile">
+          <span class="icon">👤</span>
+          <span>My Profile</span>
+        </a>
         <a href="{{ url_for('dashboard') }}" class="nav-item {{ 'active' if page=='dashboard' else '' }}" title="Dashboard">
           <span class="icon">🏠</span>
           <span>Dashboard</span>
         </a>
         <a href="{{ url_for('audits_view', dept='Inbound') }}" class="nav-item {{ 'active' if page=='inbound_audits' else '' }}" title="Inbound Audits">
           <span class="icon">📞</span>
-          <span>Inbound Audits</span>
+          <span>My Inbound Audits</span>
         </a>
         <a href="{{ url_for('audits_view', dept='Outbound') }}" class="nav-item {{ 'active' if page=='outbound_audits' else '' }}" title="Outbound Audits">
           <span class="icon">➡️</span>
-          <span>Outbound Audits</span>
+          <span>My Outbound Audits</span>
         </a>
         <a href="{{ url_for('fatal_calls') }}" class="nav-item {{ 'active' if page=='fatal_calls' else '' }}" title="Fatal Calls">
           <span class="icon">⚠️</span>
-          <span>Fatal Calls</span>
+          <span>My Fatal Calls</span>
         </a>
         <a href="{{ url_for('score_reports') }}" class="nav-item {{ 'active' if page=='score_reports' else '' }}" title="Score Reports">
           <span class="icon">📊</span>
-          <span>Score Reports</span>
+          <span>My Quality Reports</span>
         </a>
 
-        <div class="nav-section-title">My Actions & Records</div>
-        <a href="{{ url_for('warnings') }}" class="nav-item {{ 'active' if page=='warnings' else '' }}" title="Warnings & PIP">
+        <div class="nav-section-title">My actions</div>
+        <a href="{{ url_for('warnings') }}" class="nav-item {{ 'active' if page=='warnings' else '' }}" title="Warnings & PIPs">
           <span class="icon">✉️</span>
-          <span>Warnings & PIP</span>
+          <span>My Warnings & PIP</span>
         </a>
-        <a href="{{ url_for('export_center') }}" class="nav-item {{ 'active' if page=='exports' else '' }}" title="Export Center">
+        <a href="{{ url_for('my_profile') }}" class="nav-item {{ 'active' if page=='my_profile' else '' }}" title="Assigned Tasks">
+          <span class="icon">📋</span>
+          <span>My Assigned Tasks</span>
+        </a>
+        <a href="{{ url_for('export_single', key='All Audits', format='xlsx') }}" class="nav-item {{ 'active' if page=='export_single' else '' }}" title="My Reports">
           <span class="icon">📥</span>
-          <span>Export Center</span>
+          <span>My Reports</span>
         </a>
       {% else %}
         <!-- Full Operations Menu for Management & Quality Team -->
-        <div class="nav-section-title">CORE OPERATIONS</div>
+        <div class="nav-section-title">Core operations</div>
         <a href="{{ url_for('dashboard') }}" class="nav-item {{ 'active' if page=='dashboard' else '' }}" title="Dashboard">
           <span class="icon">🏠</span>
           <span>Dashboard</span>
@@ -103,7 +110,7 @@
           <span>Score Reports</span>
         </a>
 
-        <div class="nav-section-title">ANALYSIS & SEARCH</div>
+        <div class="nav-section-title">Analysis and search</div>
         <a href="{{ url_for('auditors_view') }}" class="nav-item {{ 'active' if page=='auditors' else '' }}" title="Auditor Reports">
           <span class="icon">👤</span>
           <span>Auditor Reports</span>
@@ -113,7 +120,7 @@
           <span>Advisor Search</span>
         </a>
 
-        <div class="nav-section-title">GOVERNANCE & ACTIONS</div>
+        <div class="nav-section-title">Governance and actions</div>
         <a href="{{ url_for('warnings') }}" class="nav-item {{ 'active' if page=='warnings' else '' }}" title="Warnings & PIP">
           <span class="icon">➕</span>
           <span>Warnings & PIP</span>
@@ -184,9 +191,8 @@
       <div class="topbar-right">
         <!-- Notification Bell with Count Badge (Screenshot shows red 3 badge) -->
         <div class="notification-wrapper" style="position:relative;">
-          <button type="button" onclick="toggleNotifications()" id="notifBellBtn" title="Notifications" style="background:none;border:none;cursor:pointer;position:relative;font-size:18px;display:flex;align-items:center;">
-            <span>🔔</span>
-            <span style="position:absolute;top:-4px;right:-4px;background:var(--brand-red);color:#fff;font-size:9.5px;font-weight:700;width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;">3</span>
+          <button type="button" onclick="toggleNotifications()" id="notifBellBtn" title="Notifications" aria-label="Notifications" style="background:none;border:none;cursor:pointer;position:relative;font-size:18px;display:flex;align-items:center;">
+            <span aria-hidden="true">🔔</span>
           </button>
           
           <!-- Dropdown -->

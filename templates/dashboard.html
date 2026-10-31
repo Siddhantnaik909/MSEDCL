@@ -3,6 +3,13 @@
 {% block heading %}MSEDCL Quality Audit & Performance Dashboard{% endblock %}
 
 {% block content %}
+<section class="dashboard-intro" aria-labelledby="dashboardIntroTitle">
+  <div>
+    <h2 id="dashboardIntroTitle">Quality audit overview</h2>
+    <p>Monitor call outcomes, advisor performance, and actions that need attention.</p>
+  </div>
+</section>
+
 <!-- 1. Top Advanced Filter Panel (Patterned exactly after reference screenshot) -->
 <div class="ref-filter-container">
   <form method="get" action="{{ url_for('dashboard') }}" class="ref-filter-grid" id="refFilterForm">
@@ -72,8 +79,7 @@
     <div>
       <div class="ref-kpi-header">
         <div class="ref-kpi-icon blue">📞</div>
-        <div class="ref-kpi-title">TOTAL AUDITED CALLS</div>
-        <div class="ref-kpi-trend">↗</div>
+        <div class="ref-kpi-title">Audited calls</div>
       </div>
       <div class="ref-kpi-value">{{ metrics.total_audits }}</div>
     </div>
@@ -85,8 +91,7 @@
     <div>
       <div class="ref-kpi-header">
         <div class="ref-kpi-icon red">⚠️</div>
-        <div class="ref-kpi-title">FATAL CALL ERRORS</div>
-        <div class="ref-kpi-trend" style="color:var(--brand-red);">↗</div>
+        <div class="ref-kpi-title">Fatal call errors</div>
       </div>
       <div class="ref-kpi-value">{{ metrics.fatal_count }}</div>
     </div>
@@ -98,8 +103,7 @@
     <div>
       <div class="ref-kpi-header">
         <div class="ref-kpi-icon amber">⏱️</div>
-        <div class="ref-kpi-title">LOW SCORE (&lt; 80%)</div>
-        <div class="ref-kpi-trend" style="color:var(--brand-amber);">↗</div>
+        <div class="ref-kpi-title">Low score (&lt;80%)</div>
       </div>
       <div class="ref-kpi-value">{{ metrics.low_score_count }}</div>
     </div>
@@ -111,8 +115,7 @@
     <div>
       <div class="ref-kpi-header">
         <div class="ref-kpi-icon blue">⭐</div>
-        <div class="ref-kpi-title">AVERAGE SCORE (80-90%)</div>
-        <div class="ref-kpi-trend">↗</div>
+        <div class="ref-kpi-title">Average band (80–90%)</div>
       </div>
       <div class="ref-kpi-value">{{ metrics.avg_score_count }}</div>
     </div>
@@ -124,8 +127,7 @@
     <div>
       <div class="ref-kpi-header">
         <div class="ref-kpi-icon green">👍</div>
-        <div class="ref-kpi-title">GOOD CALLS (&gt; 90%)</div>
-        <div class="ref-kpi-trend" style="color:var(--brand-green);">↗</div>
+        <div class="ref-kpi-title">High-scoring calls (&gt;90%)</div>
       </div>
       <div class="ref-kpi-value">{{ metrics.good_score_count }}</div>
     </div>
@@ -140,8 +142,7 @@
     <div>
       <div class="ref-kpi-header">
         <div class="ref-kpi-icon purple">★</div>
-        <div class="ref-kpi-title">AVERAGE QUALITY SCORE</div>
-        <div class="ref-kpi-trend" style="color:var(--brand-purple);">↗</div>
+        <div class="ref-kpi-title">Average quality score</div>
       </div>
       <div class="ref-kpi-value">{{ metrics.overall_avg }}%</div>
     </div>
@@ -153,8 +154,7 @@
     <div>
       <div class="ref-kpi-header">
         <div class="ref-kpi-icon cyan">⚠️</div>
-        <div class="ref-kpi-title">WARNINGS &amp; PIPs</div>
-        <div class="ref-kpi-trend" style="color:var(--brand-cyan);">↗</div>
+        <div class="ref-kpi-title">Warnings and PIPs</div>
       </div>
       <div class="ref-kpi-value">{{ metrics.total_warnings }}</div>
     </div>
@@ -420,11 +420,6 @@
     </a>
   </div>
 
-  <!-- Quote Pill from Reference -->
-  <div class="ref-quote-pill hide-mobile">
-    <span>🎯</span>
-    <span><strong>Quality is not an act,</strong> it is a habit.</span>
-  </div>
 </div>
 
 <!-- 6. Detailed Advisor Quality Summary Register (Filterable & Searchable) -->

@@ -10,6 +10,7 @@
     <span class="card-subtitle">Administrators can create user credentials and assign strict role permissions</span>
   </div>
   <form method="post" action="{{ url_for('user_create') }}" class="filter-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="filter-group">
       <label>Username *</label>
       <input type="text" name="username" class="form-control" placeholder="Unique system login" required>
@@ -28,7 +29,8 @@
         <option value="admin">Administrator (Full Control)</option>
         <option value="quality" selected>Quality Team (Audits, Uploads, Warnings)</option>
         <option value="manager">Manager (Audits, Reports, Approvals)</option>
-        <option value="viewer">Advisor / Read-Only (Restricted to own data)</option>
+        <option value="viewer">Viewer / Read-Only (Restricted to own data)</option>
+        <option value="advisor">Advisor (Own records only)</option>
       </select>
     </div>
     <div class="filter-group">
@@ -68,7 +70,8 @@
           <option value="admin">Administrator</option>
           <option value="quality">Quality Team</option>
           <option value="manager">Manager</option>
-          <option value="viewer">Advisor / Viewer</option>
+          <option value="viewer">Viewer (Read-Only)</option>
+          <option value="advisor">Advisor (Own Records)</option>
         </select>
       </div>
       <div class="filter-group">
@@ -135,6 +138,7 @@
               <!-- Toggle Active / Inactive (Enable / Disable) -->
               {% if u.id != user.id %}
               <form method="post" action="{{ url_for('user_toggle_status', user_id=u.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-sm {% if u.active %}btn-secondary{% else %}btn-success{% endif %}" title="Toggle Active/Inactive">
                   {{ '⛔ Disable' if u.active else '✅ Enable' }}
                 </button>
@@ -147,6 +151,7 @@
               <!-- Safe Delete -->
               {% if u.id != user.id %}
               <form method="post" action="{{ url_for('user_delete', user_id=u.id) }}" onsubmit="return confirm('Permanently remove user {{ u.username }}? Historical audits and reports will be preserved.')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-danger btn-sm" title="Remove account">🗑️ Delete</button>
               </form>
               {% endif %}
@@ -167,6 +172,7 @@
       <button onclick="closePasswordModal()" style="border:none;background:none;font-size:20px;cursor:pointer;">&times;</button>
     </div>
     <form method="post" action="{{ url_for('user_reset_password') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="user_id" id="modalUserId">
       <div style="margin-bottom:14px;">
         <label style="display:block;font-size:12px;font-weight:600;margin-bottom:5px;">New Password</label>

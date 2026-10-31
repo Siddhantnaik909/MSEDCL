@@ -1,61 +1,59 @@
 import os, io, sqlite3, hashlib, secrets, smtplib, ssl, json, sys, time, threading, subprocess
 from email.message import EmailMessage
 from datetime import datetime, date, timedelta
-from functools import wraps
 
 import pandas as pd
 from flask import Flask, request, redirect, url_for, render_template, session, flash, send_file, abort
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
+from config.logging_config import configure_logging
+from config.settings import settings
+from middleware.security import apply_security_headers, create_security_middleware
 import export_service
+from repositories.database import open_database
+from services.frontend_service import (
+    react_frontend_enabled,
+    register_frontend_routes,
+    serve_react_frontend,
+)
 
-# Load environment configuration
-env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-if os.path.exists(env_file):
-    with open(env_file, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, v = line.split("=", 1)
-                os.environ.setdefault(k.strip(), v.strip())
+configure_logging()
+APP_SECRET = settings.secret_key
+DEFAULT_DB_PATH = settings.database_path
 
-APP_SECRET = os.environ.get("APP_SECRET_KEY")
-if not APP_SECRET:
-    APP_SECRET = secrets.token_hex(32)
-    os.environ["APP_SECRET_KEY"] = APP_SECRET
 
-DB_PATH = os.environ.get("DATABASE_PATH", "quality_audit.db")
-MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "25"))
+def get_db_path():
+    """Return the active database path, honoring current environment overrides."""
+    return os.environ.get("DATABASE_PATH", DEFAULT_DB_PATH)
+
+
+DB_PATH = get_db_path()
+MAX_UPLOAD_MB = settings.max_upload_mb
 
 # Auto-initialize database schema if database or tables don't exist yet
 try:
     from init_db import init_db
-    init_db(DB_PATH)
+    init_db(get_db_path())
 except Exception as _e:
     print(f"Warning initializing database: {_e}")
 
 app = Flask(__name__)
+register_frontend_routes(app)
 app.secret_key = APP_SECRET
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SESSION_COOKIE_SECURE"] = False  # Set to True automatically if behind HTTPS
+app.config["SESSION_COOKIE_SECURE"] = os.environ.get(
+    "SESSION_COOKIE_SECURE", "false"
+).strip().lower() in {"1", "true", "yes"}
 ALLOWED_EXTENSIONS = {".xlsx", ".xlsm", ".csv"}
 
-@app.after_request
-def apply_security_headers(response):
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "SAMEORIGIN"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    return response
+app.after_request(apply_security_headers)
 
 # --- Database helpers ---
 def db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return open_database(get_db_path())
 
 def log_audit(action, target="", details=""):
     try:
@@ -80,30 +78,10 @@ def get_setting(key, default=""):
         return default
 
 # --- Authentication & Authorization ---
-def login_required(fn):
-    @wraps(fn)
-    def wrapped(*args, **kwargs):
-        if "user_id" not in session:
-            return redirect(url_for("login"))
-        with db() as con:
-            user = con.execute("SELECT * FROM users WHERE id=? AND active=1", (session["user_id"],)).fetchone()
-        if not user:
-            session.clear()
-            return redirect(url_for("login"))
-        request.current_user = user
-        return fn(*args, **kwargs)
-    return wrapped
-
-def roles(*allowed):
-    def decorator(fn):
-        @wraps(fn)
-        @login_required
-        def wrapped(*args, **kwargs):
-            if request.current_user["role"] not in allowed:
-                abort(403)
-            return fn(*args, **kwargs)
-        return wrapped
-    return decorator
+login_required, roles, _csrf_token, csrf_protect = create_security_middleware(
+    db,
+    log_audit,
+)
 
 # --- Context Processor for Global Template Context ---
 @app.context_processor
@@ -113,7 +91,8 @@ def inject_global_data():
         "app_name": get_setting("company_name", "MSEDCL Quality Audit"),
         "import_enabled": get_setting("enable_excel_import", "true") == "true",
         "max": max,
-        "min": min
+        "min": min,
+        "csrf_token": _csrf_token
     }
 
 # --- Column Detection & Cleaning ---
@@ -263,35 +242,17 @@ def import_dataframe(df, department, filename, username):
     log_audit("IMPORT_EXCEL", filename, f"Dept: {department}, Inserted: {inserted}, Dups: {duplicates}, Rejected: {rejected}")
     return {"batch_id": batch_id, "seen": seen, "inserted": inserted, "duplicates": duplicates, "rejected": rejected, "mapping": mapping, "errors": errors}
 
-# --- Routes: Auth ---
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "")
-        with db() as con:
-            user = con.execute("SELECT * FROM users WHERE username=? AND active=1", (username,)).fetchone()
-        if user and check_password_hash(user["password_hash"], password):
-            session.clear()
-            session["user_id"] = user["id"]
-            with db() as con:
-                con.execute("UPDATE users SET last_login=datetime('now') WHERE id=?", (user["id"],))
-            log_audit("LOGIN_SUCCESS", username, "User logged in")
-            return redirect(url_for("dashboard"))
-        log_audit("LOGIN_FAILED", username, "Invalid login credentials")
-        flash("Invalid username or password.", "error")
-    return render_template("login.html")
-
-@app.route("/logout")
-def logout():
-    log_audit("LOGOUT", session.get("user_id", ""), "User signed out")
-    session.clear()
-    return redirect(url_for("login"))
-
 # --- Routes: Dashboard ---
 @app.route("/")
 @login_required
 def dashboard():
+    # Restrict: viewers and advisors cannot access the organization-wide dashboard
+    curr_user = getattr(request, "current_user", None)
+    if curr_user and curr_user["role"] in ("viewer", "advisor"):
+        return redirect(url_for("my_profile"))
+    if react_frontend_enabled():
+        return serve_react_frontend()
+
     dept = request.args.get("department", "All")
     start = request.args.get("start", "")
     end = request.args.get("end", "")
@@ -704,7 +665,14 @@ def export_center():
     
     # Non-admin / non-manager users can only export their own records if advisor_id assigned
     curr_user = request.current_user
-    restrict_advisor = curr_user["advisor_id"] if (curr_user["role"] in ("viewer", "advisor") and curr_user["advisor_id"]) else None
+    # Data isolation: if viewer/advisor has no advisor_id, prevent export to avoid data leak
+    if curr_user["role"] in ("viewer", "advisor"):
+        if not curr_user.get("advisor_id"):
+            flash("Your advisor ID is not configured. Please complete your profile or contact an administrator.", "error")
+            return redirect(url_for("dashboard"))
+        restrict_advisor = curr_user["advisor_id"]
+    else:
+        restrict_advisor = None  # admins / quality / manager: unrestricted
 
     with db() as con:
         datasets = export_service.build_export_datasets(con, start_date=start, end_date=end, department=dept, auditor=auditor, current_advisor_id=restrict_advisor)
@@ -806,6 +774,14 @@ def export_advisor_report(emp_id):
     start = request.args.get("start", "")
     end = request.args.get("end", "")
 
+    curr_user = request.current_user
+    # Record-level isolation: viewers and advisors may only export their own records.
+    # Advisors match on their assigned advisor_id; viewers match on advisor_id or name.
+    if curr_user["role"] in ("viewer", "advisor") and curr_user.get("advisor_id"):
+        own_id = curr_user["advisor_id"]
+        if str(emp_id).strip() != str(own_id).strip() and not str(curr_user.get("advisor_name", "")).lower() == str(emp_id).strip().lower():
+            abort(403, description="You are only permitted to export your own advisor records.")
+
     with db() as con:
         where = ["(advisor_id = ? OR advisor_name LIKE ?)"]
         params = [emp_id, f"%{emp_id}%"]
@@ -833,6 +809,7 @@ def export_advisor_report(emp_id):
 # --- Routes: Warnings & PIP Module ---
 @app.route("/warnings", methods=["GET", "POST"])
 @roles("admin", "quality", "manager", "viewer", "advisor")
+@csrf_protect
 def warnings():
     curr_user = request.current_user
     if request.method == "POST":
@@ -879,6 +856,7 @@ def warnings():
 
 @app.route("/warnings/<int:warning_id>/send", methods=["POST"])
 @roles("admin", "quality", "manager")
+@csrf_protect
 def send_warning(warning_id):
     with db() as con:
         w = con.execute("SELECT * FROM warnings WHERE id=?", (warning_id,)).fetchone()
@@ -944,6 +922,7 @@ def send_warning(warning_id):
 
 @app.route("/warnings/<int:warning_id>/close", methods=["POST"])
 @roles("admin", "quality", "manager")
+@csrf_protect
 def close_warning(warning_id):
     remarks = request.form.get("closure_remarks", "").strip()
     with db() as con:
@@ -957,6 +936,7 @@ def close_warning(warning_id):
 
 @app.route("/warnings/<int:warning_id>/delete", methods=["POST"])
 @roles("admin")
+@csrf_protect
 def delete_warning(warning_id):
     with db() as con:
         w = con.execute("SELECT * FROM warnings WHERE id=?", (warning_id,)).fetchone()
@@ -971,6 +951,7 @@ def delete_warning(warning_id):
 
 @app.route("/warnings/<int:warning_id>/feedback", methods=["POST"])
 @login_required
+@csrf_protect
 def warning_advisor_feedback(warning_id):
     feedback_text = request.form.get("feedback", "").strip()
     if not feedback_text:
@@ -1000,14 +981,20 @@ def warning_advisor_feedback(warning_id):
 
 # --- Routes: Email History ---
 @app.route("/email-history")
-@roles("admin", "quality", "manager")
+@roles("admin", "quality", "manager", "viewer", "advisor")
 def email_history():
     q = request.args.get("q", "").strip()
     email_type = request.args.get("email_type", "All")
     status = request.args.get("status", "All")
 
-    where = ["1=1"]
-    params = []
+    curr_user = request.current_user
+    # Data isolation: viewers/advisors see only emails associated with their advisor_id
+    if curr_user["role"] in ("viewer", "advisor") and curr_user.get("advisor_id"):
+        where = ["(advisor_id = ? OR advisor_name LIKE ?)"]
+        params = [curr_user["advisor_id"], f"%{curr_user['advisor_id']}%"]
+    else:
+        where = ["1=1"]
+        params = []
     if q:
         where.append("(advisor_name LIKE ? OR recipient_email LIKE ? OR subject LIKE ? OR employee_id LIKE ?)")
         params += [f"%{q}%"] * 4
@@ -1027,6 +1014,7 @@ def email_history():
 # --- Routes: Import Files ---
 @app.route("/upload", methods=["GET", "POST"])
 @roles("admin", "quality")
+@csrf_protect
 def upload():
     import_enabled = get_setting("enable_excel_import", "true") == "true"
     result = None
@@ -1062,6 +1050,7 @@ def upload():
 
 @app.route("/upload/batch/<batch_id>/delete", methods=["POST"])
 @roles("admin", "quality")
+@csrf_protect
 def delete_import_batch(batch_id):
     with db() as con:
         batch = con.execute("SELECT * FROM import_batches WHERE id=?", (batch_id,)).fetchone()
@@ -1078,25 +1067,76 @@ def delete_import_batch(batch_id):
 
 @app.route("/api/advisor/lookup")
 @login_required
+@csrf_protect
 def advisor_lookup():
     q = request.args.get("query", "").strip()
-    if not q or len(q) < 2:
-        return {"found": False}
+    curr_user = request.current_user
+    # Scope: viewers/advisors may only look up their own advisor record;
+    # admins / quality / manager may search all advisors.
     with db() as con:
-        r = con.execute("""
-            SELECT advisor_id, advisor_name, department, team_leader,
-                   COUNT(*) as total_calls,
-                   SUM(is_fatal) as fatals,
-                   SUM(CASE WHEN quality_score < 80 THEN 1 ELSE 0 END) as low_calls,
-                   ROUND(AVG(quality_score), 2) as avg_score,
-                   (SELECT call_id || ' - ' || COALESCE(fatal_category, error_categories, 'Observation: ' || SUBSTR(observation, 1, 40))
-                    FROM audits WHERE (advisor_id = ? OR advisor_name LIKE ?) AND (is_fatal=1 OR quality_score < 80)
-                    ORDER BY id DESC LIMIT 1) as recent_incident
-            FROM audits
-            WHERE advisor_id = ? OR advisor_name LIKE ?
-            GROUP BY COALESCE(advisor_id, advisor_name)
-            ORDER BY total_calls DESC LIMIT 1
-        """, (q, f"%{q}%", q, f"%{q}%")).fetchone()
+        if curr_user["role"] in ("viewer", "advisor") and curr_user.get("advisor_id"):
+            own_id = curr_user["advisor_id"]
+            # Search only own advisor record; still allow partial match on own advisor_id/name
+            params = [own_id, f"%{q}%", own_id, f"%{q}%"]
+            r = con.execute("""
+                SELECT advisor_id, advisor_name, department, team_leader,
+                       COUNT(*) as total_calls,
+                       SUM(is_fatal) as fatals,
+                       SUM(CASE WHEN quality_score < 80 THEN 1 ELSE 0 END) as low_calls,
+                       ROUND(AVG(quality_score), 2) as avg_score,
+                       (SELECT call_id || ' - ' || COALESCE(fatal_category, error_categories, 'Observation: ' || SUBSTR(observation, 1, 40))
+                        FROM audits WHERE (advisor_id = ? OR advisor_name LIKE ?) AND (is_fatal=1 OR quality_score < 80)
+                        ORDER BY id DESC LIMIT 1) as recent_incident
+                FROM audits
+                WHERE advisor_id = ? OR advisor_name LIKE ?
+                GROUP BY COALESCE(advisor_id, advisor_name)
+                ORDER BY total_calls DESC LIMIT 1
+            """, params).fetchone()
+        else:
+            # Admins / quality / manager: unrestricted search
+            params = [q, f"%{q}%", q, f"%{q}%"]
+            r = con.execute("""
+                SELECT advisor_id, advisor_name, department, team_leader,
+                       COUNT(*) as total_calls,
+                       SUM(is_fatal) as fatals,
+                       SUM(CASE WHEN quality_score < 80 THEN 1 ELSE 0 END) as low_calls,
+                       ROUND(AVG(quality_score), 2) as avg_score,
+                       (SELECT call_id || ' - ' || COALESCE(fatal_category, error_categories, 'Observation: ' || SUBSTR(observation, 1, 40))
+                        FROM audits WHERE (advisor_id = ? OR advisor_name LIKE ?) AND (is_fatal=1 OR quality_score < 80)
+                        ORDER BY id DESC LIMIT 1) as recent_incident
+                FROM audits
+                WHERE advisor_id = ? OR advisor_name LIKE ?
+                GROUP BY COALESCE(advisor_id, advisor_name)
+                ORDER BY total_calls DESC LIMIT 1
+            """, params).fetchone()
+    if r:
+        email_prefix = (r["advisor_id"] or r["advisor_name"].split()[0]).lower().replace(" ", ".")
+        suggested_email = f"{email_prefix}@msedcl.in"
+        inc_text = r["recent_incident"] or "No recent fatal incident on record."
+        suggested_body = (
+            f"Dear {r['advisor_name']},\n\n"
+            f"This communication serves as formal quality feedback regarding your performance on recent customer interactions in the {r['department']} department.\n\n"
+            f"• Performance Summary:\n"
+            f"  - Total Evaluated Calls: {r['total_calls']}\n"
+            f"  - Average Quality Score: {r['avg_score']}%\n"
+            f"  - Fatal Infractions Recorded: {r['fatals'] or 0}\n"
+            f"  - Low Score Interactions (<80%): {r['low_calls'] or 0}\n"
+            f"  - Key Incident Reference: {inc_text}\n\n"
+            f"Please review the recorded observations with your Team Leader ({r['team_leader'] or 'Supervisory Team'}) and initiate corrective action within 7 operational days.\n\n"
+            f"Regards,\n"
+            f"MSEDCL Quality Assurance Management"
+        )
+        return {
+            "found": True,
+            "advisor_name": r["advisor_name"],
+            "advisor_id": r["advisor_id"] or "",
+            "department": r["department"] or "Inbound",
+            "suggested_email": suggested_email,
+            "suggested_subject": f"MSEDCL Quality Assurance Notice - {r['advisor_name']} ({r['advisor_id'] or 'Staff'})",
+            "suggested_body": suggested_body,
+            "remarks": f"Total Calls: {r['total_calls']}, Avg: {r['avg_score']}%, Fatals: {r['fatals'] or 0}, Low Scores: {r['low_calls'] or 0}"
+        }
+    return {"found": False}
 
     if r:
         email_prefix = (r["advisor_id"] or r["advisor_name"].split()[0]).lower().replace(" ", ".")
@@ -1130,100 +1170,14 @@ def advisor_lookup():
         }
     return {"found": False}
 
-# --- Routes: Admin User Management ---
-@app.route("/admin/users")
-@roles("admin", "manager")
-def user_management():
-    with db() as con:
-        users = con.execute("SELECT * FROM users ORDER BY id ASC").fetchall()
-    return render_template("user_management.html", page="users", users=users)
-
-@app.route("/admin/users/create", methods=["POST"])
-@roles("admin", "manager")
-def user_create():
-    username = request.form.get("username", "").strip()
-    full_name = request.form.get("full_name", "").strip()
-    email = request.form.get("email", "").strip()
-    role = request.form.get("role", "quality")
-    advisor_id = request.form.get("advisor_id", "").strip() or None
-    password = request.form.get("password", "")
-
-    if not username or not password:
-        flash("Username and password are required.", "error")
-        return redirect(url_for("user_management"))
-
-    if role not in ("admin", "quality", "manager", "viewer"):
-        flash("Invalid role selected.", "error")
-        return redirect(url_for("user_management"))
-
-    pwd_hash = generate_password_hash(password)
-    try:
-        with db() as con:
-            existing = con.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
-            if existing:
-                flash(f"Username '{username}' is already registered.", "error")
-                return redirect(url_for("user_management"))
-
-            con.execute("""
-                INSERT INTO users (username, password_hash, role, advisor_id, active, full_name, email, created_at)
-                VALUES (?, ?, ?, ?, 1, ?, ?, datetime('now'))
-            """, (username, pwd_hash, role, advisor_id, full_name, email))
-        log_audit("CREATE_USER", username, f"Role: {role}, AdvisorID: {advisor_id}, Email: {email}")
-        flash(f"User '{username}' created successfully.", "success")
-    except sqlite3.IntegrityError as e:
-        flash(f"Could not create user: {e}", "error")
-
-    return redirect(url_for("user_management"))
-
-@app.route("/admin/users/<int:user_id>/toggle", methods=["POST"])
-@roles("admin", "manager")
-def user_toggle_status(user_id):
-    if user_id == request.current_user["id"]:
-        flash("You cannot deactivate your own account.", "error")
-        return redirect(url_for("user_management"))
-    with db() as con:
-        u = con.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
-        if u:
-            new_status = 0 if u["active"] else 1
-            con.execute("UPDATE users SET active=? WHERE id=?", (new_status, user_id))
-            log_audit("TOGGLE_USER_STATUS", u["username"], f"New active status: {new_status}")
-            flash(f"User '{u['username']}' status updated to {'Active' if new_status else 'Inactive'}.", "success")
-    return redirect(url_for("user_management"))
-
-@app.route("/admin/users/reset-password", methods=["POST"])
-@roles("admin")
-def user_reset_password():
-    user_id = request.form.get("user_id")
-    new_password = request.form.get("new_password")
-    if not user_id or not new_password:
-        flash("Missing user ID or password.", "error")
-        return redirect(url_for("user_management"))
-    pwd_hash = generate_password_hash(new_password)
-    with db() as con:
-        con.execute("UPDATE users SET password_hash=? WHERE id=?", (pwd_hash, user_id))
-        u = con.execute("SELECT username FROM users WHERE id=?", (user_id,)).fetchone()
-    log_audit("RESET_PASSWORD", u["username"] if u else user_id, "Administrator reset password")
-    flash(f"Password reset successfully for user.", "success")
-    return redirect(url_for("user_management"))
-
-@app.route("/admin/users/<int:user_id>/delete", methods=["POST"])
-@roles("admin")
-def user_delete(user_id):
-    if user_id == request.current_user["id"]:
-        flash("You cannot delete your own account.", "error")
-        return redirect(url_for("user_management"))
-    with db() as con:
-        u = con.execute("SELECT username FROM users WHERE id=?", (user_id,)).fetchone()
-        if u:
-            con.execute("DELETE FROM users WHERE id=?", (user_id,))
-            log_audit("DELETE_USER", u["username"], "User account deleted")
-            flash(f"User '{u['username']}' deleted.", "success")
-    return redirect(url_for("user_management"))
-
 # --- Routes: Admin Settings & Auditing ---
 @app.route("/admin/settings", methods=["GET", "POST"])
 @roles("admin")
+@csrf_protect
 def settings_page():
+    if request.method == "GET" and react_frontend_enabled():
+        return serve_react_frontend()
+
     if request.method == "POST":
         updates = [
             ("company_name", request.form.get("company_name", "").strip()),
@@ -1260,6 +1214,7 @@ def settings_page():
 
 @app.route("/admin/settings/test-email", methods=["POST"])
 @roles("admin")
+@csrf_protect
 def test_email_connection():
     recipient = request.form.get("test_recipient", "").strip()
     if not recipient:
@@ -1306,12 +1261,15 @@ def db_backup_download():
 @app.route("/admin/audit-logs")
 @roles("admin")
 def audit_logs():
+    if react_frontend_enabled():
+        return serve_react_frontend()
     with db() as con:
         logs = con.execute("SELECT * FROM audit_logs ORDER BY id DESC LIMIT 500").fetchall()
     return render_template("audit_logs.html", page="audit_logs", logs=logs)
 
 @app.route("/admin/audits/purge", methods=["POST"])
 @roles("admin")
+@csrf_protect
 def purge_uploaded_audits():
     with db() as con:
         deleted_audits = con.execute("DELETE FROM audits").rowcount
@@ -1322,6 +1280,7 @@ def purge_uploaded_audits():
 
 @app.route("/admin/restart", methods=["POST"])
 @roles("admin")
+@csrf_protect
 def admin_restart_system():
     admin_password = request.form.get("admin_password", "")
     current_admin = request.current_user
@@ -1352,6 +1311,241 @@ def admin_restart_system():
     threading.Thread(target=delayed_restart, daemon=True).start()
     return render_template("restarting.html")
 
+# --- Employee Profile Route ---
+@app.route("/my-profile")
+@login_required
+def my_profile():
+    """Employee profile page showing only the authenticated user's own records."""
+    curr_user = request.current_user
+    user_id = curr_user["id"]
+    username = curr_user["username"]
+    role = curr_user["role"]
+    advisor_id = curr_user["advisor_id"]
+    advisor_name = curr_user.get("advisor_name", username)  # Row may support .get()
+    full_name = curr_user.get("full_name", username)
+    email = curr_user.get("email", "")
+    active = curr_user.get("active", 1)
+    last_login = curr_user.get("last_login", None)
+
+    with db() as con:
+        user_row = con.execute(
+            "SELECT advisor_id, full_name, email, last_login, active FROM users WHERE id=?",
+            (user_id,),
+        ).fetchone()
+        if user_row:
+            advisor_id = user_row["advisor_id"] or advisor_id
+            full_name = user_row["full_name"] or full_name
+            email = user_row["email"] or email
+            last_login = user_row["last_login"] or last_login
+            active = user_row["active"] if user_row["active"] is not None else active
+    advisor_name = full_name or username
+
+    own_filter = "WHERE advisor_id = ?" if advisor_id else "WHERE 1=0"
+    own_params = [advisor_id] if advisor_id else []
+
+    # --- My Audited Calls (own records only) ---
+    with db() as con:
+        my_audits = con.execute(
+            f"""
+            SELECT id, call_id, call_date, evaluation_date, department,
+                   advisor_id, advisor_name, team_leader, auditor_name,
+                   quality_score, is_fatal, fatal_category, observation
+            FROM audits
+            {own_filter}
+            ORDER BY COALESCE(call_date, evaluation_date) DESC
+            LIMIT 50
+            """,
+            own_params,
+        ).fetchall()
+
+        my_audit_count = con.execute(
+            f"SELECT COUNT(*) as c FROM audits {own_filter}", own_params
+        ).fetchone()["c"]
+
+        my_fatal_count = con.execute(
+            f"SELECT COUNT(*) as c FROM audits {own_filter} AND is_fatal = 1",
+            own_params,
+        ).fetchone()["c"]
+
+        my_low_score_count = con.execute(
+            f"SELECT COUNT(*) as c FROM audits {own_filter} AND quality_score < 80",
+            own_params,
+        ).fetchone()["c"]
+
+        my_avg_score_row = con.execute(
+            f"SELECT AVG(quality_score) as avg_score FROM audits {own_filter} AND quality_score IS NOT NULL",
+            own_params,
+        ).fetchone()
+        my_avg_score = round(my_avg_score_row["avg_score"], 2) if my_avg_score_row["avg_score"] else None
+
+        score_distribution = con.execute(
+            f"""
+            SELECT
+                SUM(CASE WHEN quality_score < 80 THEN 1 ELSE 0 END) as low_count,
+                SUM(CASE WHEN quality_score >= 80 AND quality_score <= 90 THEN 1 ELSE 0 END) as mid_count,
+                SUM(CASE WHEN quality_score > 90 THEN 1 ELSE 0 END) as good_count
+            FROM audits {own_filter} AND quality_score IS NOT NULL
+            """,
+            own_params,
+        ).fetchone()
+
+        monthly_trend = con.execute(
+            f"""
+            SELECT
+                strftime('%Y-%m', COALESCE(call_date, evaluation_date)) as month,
+                COUNT(*) as audit_count,
+                AVG(quality_score) as avg_score
+            FROM audits
+            {own_filter}
+            {"AND" if own_filter else "WHERE"} quality_score IS NOT NULL
+            GROUP BY month
+            ORDER BY month DESC
+            LIMIT 6
+            """,
+            own_params,
+        ).fetchall()
+
+    # --- My Warnings & PIPs (own records only) ---
+    with db() as con:
+        my_warnings = con.execute(
+            f"""
+            SELECT id, warning_type, issue_date, effective_date, review_date,
+                   status, department, advisor_id, advisor_name, email_status
+            FROM warnings
+            {own_filter}
+            ORDER BY issue_date DESC
+            LIMIT 50
+            """,
+            own_params,
+        ).fetchall()
+
+        my_warning_count = con.execute(
+            f"SELECT COUNT(*) as c FROM warnings {own_filter}", own_params
+        ).fetchone()["c"]
+
+        my_open_warning_count = con.execute(
+            f"SELECT COUNT(*) as c FROM warnings {own_filter} AND status = 'Open'",
+            own_params,
+        ).fetchone()["c"]
+
+    # --- Assigned Tasks ---
+    assigned_tasks = []
+    if advisor_id:
+        with db() as con:
+            assigned_tasks = con.execute(
+                """
+                SELECT id, warning_type, issue_date, review_date, status, department
+                FROM warnings
+                WHERE advisor_id = ? AND status != 'Closed'
+                ORDER BY issue_date DESC
+                LIMIT 20
+                """,
+                (advisor_id,),
+            ).fetchall()
+
+    department = None
+    if my_audits:
+        department = my_audits[0]["department"] if my_audits[0]["department"] else None
+
+    audit_rows = []
+    for a in my_audits:
+        audit_rows.append({
+            "id": a["id"],
+            "call_id": a["call_id"],
+            "call_date": a["call_date"] or a["evaluation_date"],
+            "evaluation_date": a["evaluation_date"],
+            "department": a["department"],
+            "advisor_id": a["advisor_id"],
+            "advisor_name": a["advisor_name"],
+            "team_leader": a["team_leader"],
+            "auditor_name": a["auditor_name"],
+            "quality_score": a["quality_score"],
+            "is_fatal": a["is_fatal"],
+            "fatal_category": a["fatal_category"],
+            "observation": a["observation"],
+            "result": "Fatal" if a["is_fatal"] else ("Pass" if (a["quality_score"] or 0) >= 80 else "Low Score"),
+        })
+
+    warning_rows = []
+    for w in my_warnings:
+        warning_rows.append({
+            "id": w["id"],
+            "warning_type": w["warning_type"],
+            "issue_date": w["issue_date"],
+            "effective_date": w["effective_date"],
+            "review_date": w["review_date"],
+            "status": w["status"],
+            "department": w["department"],
+            "advisor_id": w["advisor_id"],
+            "advisor_name": w["advisor_name"],
+            "email_status": w["email_status"],
+        })
+
+    task_rows = []
+    for t in assigned_tasks:
+        task_rows.append({
+            "id": t["id"],
+            "title": t["warning_type"],
+            "issue_date": t["issue_date"],
+            "review_date": t["review_date"],
+            "status": t["status"],
+            "department": t["department"],
+        })
+
+    trend_labels = []
+    trend_scores = []
+    trend_counts = []
+    for m in reversed(monthly_trend):
+        trend_labels.append(m["month"])
+        trend_scores.append(round(m["avg_score"], 1) if m["avg_score"] else 0)
+        trend_counts.append(m["audit_count"])
+
+    score_labels = ["Low (<80%)", "Average (80-90%)", "Good (>90%)"]
+    score_data = [
+        (score_distribution["low_count"] or 0) if score_distribution else 0,
+        (score_distribution["mid_count"] or 0) if score_distribution else 0,
+        (score_distribution["good_count"] or 0) if score_distribution else 0,
+    ]
+
+    log_audit("VIEW_OWN_PROFILE", "my_profile", f"Employee {username} viewed their own profile")
+
+    return render_template(
+        "my_profile.html",
+        user=curr_user,
+        username=username,
+        role=role,
+        advisor_id=advisor_id,
+        advisor_name=advisor_name,
+        full_name=full_name,
+        email=email,
+        active=active,
+        last_login=last_login,
+        department=department,
+        my_audit_count=my_audit_count,
+        my_avg_score=my_avg_score,
+        my_fatal_count=my_fatal_count,
+        my_low_score_count=my_low_score_count,
+        my_warning_count=my_warning_count,
+        my_open_warning_count=my_open_warning_count,
+        audits=audit_rows,
+        warnings=warning_rows,
+        tasks=task_rows,
+        trend_labels=trend_labels,
+        trend_scores=trend_scores,
+        trend_counts=trend_counts,
+        score_labels=score_labels,
+        score_data=score_data,
+        page="my_profile",
+    )
+
+
+# --- Employee Profile Redirect (legacy /profile) ---
+@app.route("/profile")
+@login_required
+def profile_redirect():
+    return redirect(url_for("my_profile"))
+
+
 # --- Error Handlers ---
 @app.errorhandler(403)
 def forbidden(e):
@@ -1364,6 +1558,17 @@ def not_found(e):
 @app.errorhandler(413)
 def too_large(e):
     return f"<h2 style='font-family:sans-serif;'>413 Request Entity Too Large: File upload exceeds maximum limit ({MAX_UPLOAD_MB} MB).</h2>", 413
+
+from routes import register_routes
+
+register_routes(
+    app,
+    roles=roles,
+    csrf_protect=csrf_protect,
+    db_factory=db,
+    csrf_token=_csrf_token,
+    log_audit=log_audit,
+)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))

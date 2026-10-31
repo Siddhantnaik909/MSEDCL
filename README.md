@@ -39,6 +39,7 @@
 - [👥 Role-Based Access Control (RBAC)](#-role-based-access-control-rbac)
 - [🚀 Quick Start & Installation (Windows / Linux)](#-quick-start--installation)
 - [🌐 Cloud Deployment (Render / Gunicorn)](#-cloud-deployment-render--gunicorn)
+- [🧭 Project Guides](#-project-guides)
 - [📧 Email Dispatch Configuration](#-email-dispatch-configuration)
 - [📥 Automated Report Generation & Exports](#-automated-report-generation--exports)
 - [🔐 Security Best Practices](#-security-best-practices)
@@ -134,34 +135,83 @@ pip install -r requirements.txt
 
 ### 3. Initialize Database & Migrations
 ```bash
-python migrate_db.py
 python init_db.py
+python migrate_db.py
 ```
 
 ### 4. Run the Application
 ```bash
 python app.py
 ```
-Visit **`http://localhost:5000`** in your browser. Default Admin: `admin` / `admin123` (or configured via `.env`).
+Visit **`http://localhost:5000`** for the Flask application. Local demo
+accounts are configured by `ADMIN_USERNAME` / `ADMIN_PASSWORD`,
+`QUALITY_USERNAME` / `QUALITY_PASSWORD`, and `MANAGER_USERNAME` /
+`MANAGER_PASSWORD` in `.env`. The sample passwords are local-demo-only; Render
+rejects them when initializing a hosted database.
+
+### React dashboard and sign-in
+
+The React + TypeScript UI is under `frontend/`. Sign-in and the operations
+dashboard use real Flask sessions and SQLite dashboard data. Other workflows
+remain on Flask/Jinja during the feature-by-feature migration.
+
+**Windows:** double-click `run.bat` from the project folder, or run this single
+command from Command Prompt:
+
+```cmd
+run.bat
+```
+
+The launcher checks the required runtimes, installs missing dependencies,
+initializes the database, and starts Flask and Vite in separate terminal
+windows. It opens the React sign-in page at `http://127.0.0.1:5173/login`.
+Close both server windows to stop the application. Install Python 3 and
+Node.js LTS first if they are not already available.
+
+**Other platforms / manual startup:** run Flask with `python app.py` from the
+project root, then run `npm install` and `npm run dev` from `frontend/`.
+Vite proxies `/api/v1` to Flask at `http://127.0.0.1:5000` by default. Set
+`VITE_API_PROXY_TARGET` if Flask is listening on another local address.
 
 ---
 
-## 🌐 Cloud Deployment (Render / Gunicorn)
+## 🌐 Cloud Deployment (Render)
 
-This repository is optimized for one-click deployment on **Render**:
+The root `render.yaml` deploys a single Docker web service. Docker builds the
+React client and serves it from Flask on the same origin as the session-backed
+API. The migrated dashboard and admin pages use React; workflows not yet
+migrated continue to use Flask/Jinja.
 
-- **Build Command:**
-  ```bash
-  pip install -r requirements.txt
-  ```
-- **Start Command:**
-  ```bash
-  gunicorn app:app --workers 2 --bind 0.0.0.0:$PORT
-  ```
-- **Environment Variables Required:**
-  - `APP_SECRET_KEY`: Long cryptographic string.
-  - `DATABASE_PATH`: `quality_audit.db`
-  - `MAX_UPLOAD_MB`: `25`
+1. Push the repository to a Git provider connected to Render.
+2. In Render, choose **New → Blueprint**, select the repository, and apply the
+   root `render.yaml`.
+3. Set the prompted `ADMIN_PASSWORD`, `QUALITY_PASSWORD`, and
+   `MANAGER_PASSWORD` values in Render. Choose unique passwords; these values
+   are only used when the database first seeds its accounts.
+4. Wait for the service health check at `/healthz` and open the service URL.
+   The React sign-in page is `/login`.
+
+**Free-tier data warning:** this Blueprint intentionally uses Render's free
+ephemeral filesystem. The SQLite database (including users, audits, settings,
+and audit logs) can be erased when the service is redeployed, restarted, or
+replaced. This is suitable only for demos and testing; do not enter production
+or sensitive records. For persistent operational use, choose a paid Render
+plan, attach a persistent disk, set `DATABASE_PATH` to a file under its mount
+path, and configure backups before deployment.
+
+See [Render deployment instructions](./docs/render-deployment.md) for service
+configuration, first-deploy checks, upgrades, and persistence guidance.
+
+The container sets `SESSION_COOKIE_SECURE=true` and generates
+`APP_SECRET_KEY` through Render. Do not copy real passwords into `render.yaml`,
+the Docker image, or committed files.
+
+## 🧭 Project Guides
+
+- [Local development and test instructions](./docs/local-development.md)
+- [Current architecture and runtime flow](./docs/CURRENT_ARCHITECTURE.md)
+- [Render deployment and data-persistence warning](./docs/render-deployment.md)
+- [Project audit and known migration boundaries](./docs/PROJECT_AUDIT.md)
 
 ---
 

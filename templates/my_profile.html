@@ -1,0 +1,224 @@
+{% extends "layout.html" %}
+{% block title %}My Profile · MSEDCL Quality Audit{% endblock %}
+{% block heading %}My Profile{% endblock %}
+{% block content %}
+<header class="profile-hero">
+  <div class="profile-hero-identity">
+    <div class="profile-avatar" aria-hidden="true">{{ (full_name or username or 'U')[:1].upper() }}</div>
+    <div class="profile-info">
+      <p class="profile-eyebrow">Employee quality dashboard</p>
+      <h1 class="profile-name">{{ full_name or username }}</h1>
+      <div class="profile-identity-meta">
+        <span>Employee ID <strong>{{ advisor_id or 'Not assigned' }}</strong></span>
+        <span class="role-badge">{{ role|replace('_', ' ')|title }}</span>
+      </div>
+    </div>
+  </div>
+  <div class="profile-hero-score">
+    <div class="hero-score-heading">
+      <span>Average quality score</span>
+      <span class="status-pill {{ 'is-active' if active else 'is-inactive' }}"><span aria-hidden="true"></span>{{ 'Active' if active else 'Inactive' }}</span>
+    </div>
+    <div class="hero-score-value">{{ my_avg_score if my_avg_score is not none else '—' }}{% if my_avg_score is not none %}<span>%</span>{% endif %}</div>
+    <div class="hero-score-track" role="progressbar" aria-label="Average quality score" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ my_avg_score if my_avg_score is not none else 0 }}">
+      <span style="width: {{ my_avg_score if my_avg_score is not none else 0 }}%"></span>
+    </div>
+    <p>Based on {{ my_audit_count }} audited {{ 'call' if my_audit_count == 1 else 'calls' }}</p>
+  </div>
+  <div class="profile-hero-contact">
+    <div class="contact-item"><span class="contact-icon" aria-hidden="true">@</span><span><small>Email</small><strong>{{ email or 'Not provided' }}</strong></span></div>
+    <div class="contact-item"><span class="contact-icon" aria-hidden="true">+</span><span><small>Department</small><strong>{{ department or 'Not assigned' }}</strong></span></div>
+    {% if last_login %}<div class="profile-last-login">Last login <strong>{{ last_login }}</strong></div>{% endif %}
+  </div>
+</header>
+
+<div class="profile-section-heading-row">
+  <h2 class="profile-section-heading">Your quality at a glance</h2>
+  <p>Personal performance and follow-up</p>
+</div>
+<div class="summary-grid">
+  <div class="summary-card calls">
+    <div class="summary-icon" aria-hidden="true">☎</div>
+    <div class="summary-value">{{ my_audit_count }}</div>
+    <div class="summary-label">Audited calls</div>
+    <small>Inbound and outbound</small>
+  </div>
+  <div class="summary-card score">
+    <div class="summary-icon" aria-hidden="true">★</div>
+    <div class="summary-value">{{ my_avg_score if my_avg_score is not none else '—' }}{% if my_avg_score is not none %}<span>%</span>{% endif %}</div>
+    <div class="summary-label">Average quality score</div>
+    <small>Across scored audits</small>
+  </div>
+  <div class="summary-card fatal">
+    <div class="summary-icon" aria-hidden="true">!</div>
+    <div class="summary-value">{{ my_fatal_count }}</div>
+    <div class="summary-label">Fatal call errors</div>
+    <small>Requires attention</small>
+  </div>
+  <div class="summary-card low-score">
+    <div class="summary-icon" aria-hidden="true">↘</div>
+    <div class="summary-value">{{ my_low_score_count }}</div>
+    <div class="summary-label">Low-score audits</div>
+    <small>Below 80%</small>
+  </div>
+  <div class="summary-card warnings">
+    <div class="summary-icon" aria-hidden="true">✉</div>
+    <div class="summary-value">{{ my_warning_count }}</div>
+    <div class="summary-label">Warnings and PIPs</div>
+    <small>All records</small>
+  </div>
+  <div class="summary-card pips">
+    <div class="summary-icon" aria-hidden="true">▤</div>
+    <div class="summary-value">{{ my_open_warning_count }}</div>
+    <div class="summary-label">Open actions</div>
+    <small>Warnings and PIPs in progress</small>
+  </div>
+</div>
+
+<div class="profile-dashboard-grid">
+<section class="profile-section audit-section">
+  <div class="section-header">
+    <h2 class="section-title"><span class="section-mark" aria-hidden="true">▤</span>My audit activity</h2>
+    <a href="{{ url_for('audits_view', dept='Inbound') }}" class="section-link">View inbound audits</a>
+  </div>
+  {% if audits %}
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Audit date</th>
+          <th>Department</th>
+          <th>Reference</th>
+          <th>Quality score</th>
+          <th>Result</th>
+          <th>Auditor</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for audit in audits %}
+        <tr>
+          <td>{{ audit.call_date or '—' }}</td>
+          <td><span class="badge badge-{{ audit.department|lower }}">{{ audit.department }}</span></td>
+          <td><code>{{ audit.call_id or '—' }}</code></td>
+          <td><span class="score-badge {% if audit.is_fatal %}score-fatal{% elif audit.quality_score is not none and audit.quality_score >= 80 %}score-good{% else %}score-low{% endif %}">{{ audit.quality_score if audit.quality_score is not none else '—' }}{% if audit.quality_score is not none %}%{% endif %}</span></td>
+          <td><span class="status-badge status-{{ audit.result|lower|replace(' ', '-') }}">{{ audit.result }}</span></td>
+          <td>{{ audit.auditor_name or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state"><div class="empty-icon" aria-hidden="true">▤</div><p>No audit records are linked to your profile yet.</p></div>
+  {% endif %}
+</section>
+
+<div class="profile-side-column">
+  <section class="profile-section chart-section">
+    <div class="section-header"><h2 class="section-title"><span class="section-mark" aria-hidden="true">▥</span>Quality performance</h2></div>
+    <div class="chart-card">
+      <h3>Average score by month</h3>
+      <div class="chart-canvas"><canvas id="myScoreTrendChart" aria-label="Average quality score by month" role="img"></canvas></div>
+    </div>
+    <div class="chart-card distribution-card">
+      <h3>Score categories</h3>
+      <div class="distribution-layout">
+        <div class="distribution-chart"><canvas id="myScoreDistributionChart" aria-label="Audits by score category" role="img"></canvas><div class="chart-center"><strong>{{ my_audit_count }}</strong><small>audits</small></div></div>
+        <ul class="distribution-legend">
+          <li><span class="legend-dot low"></span><span>Below 80%</span><strong>{{ score_data[0] }}</strong></li>
+          <li><span class="legend-dot mid"></span><span>80–90%</span><strong>{{ score_data[1] }}</strong></li>
+          <li><span class="legend-dot good"></span><span>Above 90%</span><strong>{{ score_data[2] }}</strong></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="profile-section quick-links-section">
+    <div class="section-header"><h2 class="section-title"><span class="section-mark" aria-hidden="true">↗</span>Quick links</h2></div>
+    <a href="{{ url_for('warnings') }}" class="quick-link"><span aria-hidden="true">✉</span>My warnings and PIPs<span aria-hidden="true">›</span></a>
+    <a href="{{ url_for('score_reports') }}" class="quick-link"><span aria-hidden="true">▥</span>My quality reports<span aria-hidden="true">›</span></a>
+    <a href="{{ url_for('export_single', key='All Audits', format='xlsx') }}" class="quick-link"><span aria-hidden="true">↓</span>Export my audit data<span aria-hidden="true">›</span></a>
+  </section>
+</div>
+</div>
+
+<section class="profile-section">
+  <div class="section-header"><h2 class="section-title"><span class="section-mark" aria-hidden="true">!</span>My warnings and PIPs</h2></div>
+  {% if warnings %}
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr><th>Issue date</th><th>Type</th><th>Status</th><th>Department</th><th>Email status</th></tr>
+      </thead>
+      <tbody>
+        {% for warning in warnings %}
+        <tr>
+          <td>{{ warning.issue_date or '—' }}</td>
+          <td>{{ warning.warning_type or '—' }}</td>
+          <td><span class="status-badge status-{{ (warning.status or 'open')|lower|replace(' ', '-') }}">{{ warning.status or 'Open' }}</span></td>
+          <td>{{ warning.department or '—' }}</td>
+          <td><span class="badge badge-{{ 'success' if warning.email_status=='Sent' else 'warning' }}">{{ warning.email_status or 'Pending' }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state"><div class="empty-icon" aria-hidden="true">✓</div><p>No warnings or PIPs are linked to your profile.</p></div>
+  {% endif %}
+</section>
+
+<section class="profile-section">
+  <div class="section-header"><h2 class="section-title"><span class="section-mark" aria-hidden="true">▣</span>My assigned tasks</h2></div>
+  {% if tasks %}
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr><th>Task</th><th>Assigned date</th><th>Review date</th><th>Status</th><th>Department</th></tr>
+      </thead>
+      <tbody>
+        {% for task in tasks %}
+        <tr>
+          <td>{{ task.title }}</td>
+          <td>{{ task.issue_date }}</td>
+          <td>{{ task.review_date or '—' }}</td>
+          <td><span class="status-badge status-{{ (task.status or 'open')|lower|replace(' ', '-') }}">{{ task.status or 'Open' }}</span></td>
+          <td>{{ task.department or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state"><div class="empty-icon" aria-hidden="true">✓</div><p>No tasks are currently assigned to you.</p></div>
+  {% endif %}
+</section>
+
+<section class="profile-section">
+  <div class="section-header">
+    <h2 class="section-title"><span class="section-mark" aria-hidden="true">↓</span>My reports</h2>
+    <p class="section-description">Download your own audit and warning data.</p>
+  </div>
+  <div class="report-grid">
+    <div class="report-card">
+      <h3 class="report-title">Audit data · Excel</h3>
+      <p class="report-desc">Export your own audited calls to Excel.</p>
+      <a href="{{ url_for('export_single', key='All Audits', format='xlsx') }}" class="btn btn-primary btn-sm">Download Excel</a>
+    </div>
+    <div class="report-card">
+      <h3 class="report-title">Audit data · CSV</h3>
+      <p class="report-desc">Export your own audited calls to CSV.</p>
+      <a href="{{ url_for('export_single', key='All Audits', format='csv') }}" class="btn btn-primary btn-sm">Download CSV</a>
+    </div>
+    <div class="report-card">
+      <h3 class="report-title">My Warnings & PIPs</h3>
+      <p class="report-desc">Export your own warning and PIP records.</p>
+      <a href="{{ url_for('export_single', key='Warning & PIP History', format='xlsx') }}" class="btn btn-primary btn-sm">Download Excel</a>
+    </div>
+  </div>
+</section>
+
+<script id="profileChartData" type="application/json">{{ {'trendLabels': trend_labels, 'trendScores': trend_scores, 'scoreLabels': score_labels, 'scoreData': score_data}|tojson }}</script>
+<script src="{{ url_for('static', filename='js/my_profile.js') }}"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/my_profile.css') }}">
+{% endblock %}

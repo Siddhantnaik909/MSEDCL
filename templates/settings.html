@@ -9,6 +9,7 @@
     <span class="card-subtitle">Global environment, email providers, and upload permissions</span>
   </div>
   <form method="post" action="{{ url_for('settings_page') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="filter-grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
 
       <!-- General Settings -->
@@ -120,6 +121,7 @@
     </div>
     <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;">Send a diagnostic test ping to verify current SMTP / provider credentials.</p>
     <form method="post" action="{{ url_for('test_email_connection') }}" style="display:flex;gap:8px;flex-wrap:wrap;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="email" name="test_recipient" placeholder="Recipient email address" class="form-control" style="flex:1;min-width:180px;" required>
       <button type="submit" class="btn btn-secondary" style="min-width:100px;">Send Ping</button>
     </form>

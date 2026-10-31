@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#102c4d" />
+    <meta
+      name="description"
+      content="MSEDCL Quality Audit operations workspace"
+    />
+    <link rel="stylesheet" href="/css/legacy-theme.css" />
+    <script>
+      (function () {
+        const savedTheme = localStorage.getItem('msedcl_theme');
+        document.documentElement.setAttribute(
+          'data-theme',
+          savedTheme === 'dark' ? 'dark' : 'light',
+        );
+      })();
+    </script>
+    <title>MSEDCL Quality Audit</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-  <title>Sign In · MSEDCL Quality Audit</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102c4d">
+  <title>Sign in · MSEDCL Quality Audit</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   <script>
     (function() {
@@ -15,127 +16,106 @@
       }
     })();
   </script>
-  <style>
-    body {
-      background: radial-gradient(circle at top right, #1e3a8a, #0b1120);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      margin: 0;
-      padding: 16px;
-    }
-    .login-container {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
-      width: 100%;
-      max-width: 420px;
-      padding: 32px 28px;
-      position: relative;
-    }
-    .brand-logo {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 22px;
-    }
-    .brand-logo .icon {
-      width: 44px;
-      height: 44px;
-      background: linear-gradient(135deg, #f59e0b, #ef4444);
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 22px;
-      color: #fff;
-      box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
-    }
-    .brand-logo h2 {
-      font-size: 18px;
-      color: var(--text-main);
-      line-height: 1.2;
-      font-weight: 700;
-    }
-    .brand-logo p {
-      font-size: 11.5px;
-      color: var(--text-muted);
-    }
-    .theme-corner-btn {
-      position: absolute;
-      top: 18px;
-      right: 18px;
-      background: var(--bg-card-subtle);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 6px 10px;
-      cursor: pointer;
-      font-size: 14px;
-    }
-  </style>
 </head>
-<body>
+<body class="login-page">
+  <main class="login-layout">
+    <section class="login-story" aria-label="MSEDCL quality assurance">
+      <a class="login-brand" href="{{ url_for('login') }}" aria-label="MSEDCL Quality Audit home">
+        <span class="login-brand-mark" aria-hidden="true">⚡</span>
+        <span>
+          <strong>MSEDCL</strong>
+          <small>Quality Audit Portal</small>
+        </span>
+      </a>
 
-<div class="login-container">
-  <button type="button" class="theme-corner-btn" onclick="toggleTheme()" id="themeIcon" title="Toggle Theme">🌓</button>
+      <div class="login-story-copy">
+        <p class="login-story-kicker">Maharashtra State Electricity Distribution</p>
+        <h1>Better quality.<br>Better service.</h1>
+        <p>Review performance, learn from every interaction, and help deliver a better experience for every customer.</p>
+      </div>
 
-  <div class="brand-logo">
-    <div class="icon">⚡</div>
-    <div>
-      <h2>MSEDCL Quality Audit</h2>
-      <p>Maharashtra State Electricity Distribution</p>
-    </div>
-  </div>
+      <div class="login-grid-art" aria-hidden="true">
+        <svg viewBox="0 0 640 260" role="presentation" focusable="false">
+          <path class="grid-line" d="M0 224H640M0 184H640M0 144H640M0 104H640M0 64H640" />
+          <path class="grid-line" d="M80 0V260M160 0V260M240 0V260M320 0V260M400 0V260M480 0V260M560 0V260" />
+          <path class="power-line" d="M0 82C112 82 140 128 260 128S398 48 640 48" />
+          <path class="power-line power-line-secondary" d="M0 114C132 114 154 157 270 157S435 78 640 78" />
+          <g class="tower-lines">
+            <path d="M484 61L454 223M484 61L516 223M440 100H528M448 133H521M455 165H515M455 100L514 133M514 100L455 133M450 133L512 165M512 133L450 165M455 165L516 223M515 165L454 223" />
+            <path d="M432 100H536M442 133H526M449 165H519M447 223H523" />
+          </g>
+          <circle class="tower-beacon" cx="484" cy="58" r="4" />
+        </svg>
+        <div class="login-art-caption"><span></span>Reliable service starts with quality</div>
+      </div>
+      <p class="login-story-footer">Serving Maharashtra with care and accountability.</p>
+    </section>
 
-  <h3 style="font-size:16px; margin-bottom:6px; color:var(--text-main); font-weight:700;">Sign In to Portal</h3>
-  <p style="font-size:12.5px; color:var(--text-muted); margin-bottom:20px;">Enter your authorized system credentials to proceed.</p>
+    <section class="login-container" aria-labelledby="loginHeading">
+      <div class="login-panel-top">
+        <span class="login-panel-label">Employee access</span>
+        <button type="button" class="theme-corner-btn" onclick="toggleTheme()" id="themeIcon" title="Toggle color theme" aria-label="Toggle color theme">☾</button>
+      </div>
 
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-      {% for category, message in messages %}
-        <div class="alert alert-danger" style="padding:10px 14px; font-size:12.5px; margin-bottom:16px;">
-          <span>{{ message }}</span>
+      <div class="login-form-content">
+        <p class="login-welcome">Welcome back</p>
+        <h2 class="login-heading" id="loginHeading">Sign in to your account</h2>
+        <p class="login-description">Enter your credentials to continue to the quality audit portal.</p>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="alert {{ 'alert-success' if category == 'success' else 'alert-danger' if category == 'error' else 'alert-info' }}" role="alert">
+                <span>{{ message }}</span>
+              </div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <form method="post" action="{{ url_for('login') }}" class="login-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="login-field">
+            <label for="username">Username</label>
+            <input id="username" type="text" name="username" class="form-control" placeholder="Enter your username" required autofocus autocomplete="username">
+          </div>
+
+          <div class="login-field">
+            <label for="password">Password</label>
+            <input id="password" type="password" name="password" class="form-control" placeholder="Enter your password" required autocomplete="current-password">
+          </div>
+
+          <button type="submit" class="btn btn-primary login-submit">
+            <span>Sign in</span>
+            <span aria-hidden="true">›</span>
+          </button>
+        </form>
+
+        <div class="login-security-note">
+          <span class="login-security-mark" aria-hidden="true">✓</span>
+          <p>Secure, role-based access. Account activity is monitored.</p>
         </div>
-      {% endfor %}
-    {% endif %}
-  {% endwith %}
+      </div>
 
-  <form method="post" action="{{ url_for('login') }}">
-    <div style="margin-bottom:14px;">
-      <label style="display:block; font-size:12px; font-weight:600; color:var(--text-muted); margin-bottom:5px;">Username</label>
-      <input type="text" name="username" class="form-control" placeholder="Enter username" required autofocus autocomplete="username">
-    </div>
+      <p class="login-panel-footer">Need access? Contact your system administrator.</p>
+    </section>
+  </main>
 
-    <div style="margin-bottom:20px;">
-      <label style="display:block; font-size:12px; font-weight:600; color:var(--text-muted); margin-bottom:5px;">Password</label>
-      <input type="password" name="password" class="form-control" placeholder="••••••••" required autocomplete="current-password">
-    </div>
-
-    <button type="submit" class="btn btn-primary" style="width:100%; padding:10px; font-size:14px;">Sign In to Dashboard</button>
-  </form>
-
-  <p style="text-align:center; margin-top:22px; font-size:11.5px; color:var(--text-light);">
-    Strict role-based access. Administrative access is logged.
-  </p>
-</div>
-
-<script>
-  function toggleTheme() {
-    const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
-    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', newTheme);
-    localStorage.setItem('msedcl_theme', newTheme);
-    updateThemeIcon();
-  }
-  function updateThemeIcon() {
-    const theme = document.documentElement.getAttribute('data-theme');
-    const icon = document.getElementById('themeIcon');
-    if (icon) icon.innerText = theme === 'dark' ? '☀️' : '🌙';
-  }
-  document.addEventListener('DOMContentLoaded', updateThemeIcon);
-</script>
-
+  <script>
+    function toggleTheme() {
+      const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', newTheme);
+      localStorage.setItem('msedcl_theme', newTheme);
+      updateThemeIcon();
+    }
+    function updateThemeIcon() {
+      const theme = document.documentElement.getAttribute('data-theme');
+      const button = document.getElementById('themeIcon');
+      if (!button) return;
+      button.innerText = theme === 'dark' ? '☼' : '☾';
+      button.setAttribute('aria-label', theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
+    }
+    document.addEventListener('DOMContentLoaded', updateThemeIcon);
+  </script>
 </body>
 </html>

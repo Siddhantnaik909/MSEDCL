@@ -174,6 +174,39 @@ def init_db(db_path=None):
     cur.execute("SELECT COUNT(*) FROM users")
     count = cur.fetchone()[0]
     if count == 0:
+        if os.environ.get("SERVE_REACT_FRONTEND", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }:
+            demo_passwords = {
+                "ADMIN_PASSWORD": "Msedcl@123",
+                "QUALITY_PASSWORD": "Msedcl@1234",
+                "MANAGER_PASSWORD": "Msedcl@1235",
+            }
+            missing_credentials = [
+                key for key in demo_passwords if not os.environ.get(key, "").strip()
+            ]
+            demo_credentials = [
+                key
+                for key, demo_password in demo_passwords.items()
+                if os.environ.get(key) == demo_password
+            ]
+            if missing_credentials or demo_credentials:
+                conn.close()
+                problems = []
+                if missing_credentials:
+                    problems.append("missing: " + ", ".join(missing_credentials))
+                if demo_credentials:
+                    problems.append(
+                        "local demo passwords are not allowed: "
+                        + ", ".join(demo_credentials)
+                    )
+                raise RuntimeError(
+                    "Set non-demo Render account passwords before initializing "
+                    "the production database (" + "; ".join(problems) + ")."
+                )
+
         admin_user = os.environ.get("ADMIN_USERNAME", "qaadmin")
         admin_pass = os.environ.get("ADMIN_PASSWORD", "Msedcl@123")
         quality_user = os.environ.get("QUALITY_USERNAME", "quality1")

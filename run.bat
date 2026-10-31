@@ -1,70 +1,91 @@
 @echo off
-title MSEDCL Quality Audit Management System
+setlocal
+title MSEDCL Quality Audit Portal
 color 0A
-cls
-echo ===============================================================================
-echo                MSEDCL Quality Audit Management Portal
-echo ===============================================================================
-echo.
-
 cd /d "%~dp0"
+if errorlevel 1 goto :error
 
-:: 1. Check Python installation
-where python >nul 2>nul
-if %errorlevel% neq 0 (
-    echo [ERROR] Python was not found in your system PATH.
-    echo Please install Python 3.10+ and check 'Add Python to PATH' during setup.
-    pause
-    exit /b 1
+set "PROJECT_DIR=%CD%"
+set "PYTHON=%PROJECT_DIR%\.venv\Scripts\python.exe"
+
+echo ============================================================
+echo          MSEDCL Quality Audit Portal - Local Setup
+echo ============================================================
+echo.
+
+where node >nul 2>nul
+if errorlevel 1 (
+    echo [ERROR] Node.js is required to run the React frontend.
+    echo Install Node.js LTS from https://nodejs.org, then run this file again.
+    goto :error
 )
 
-:: 2. Create virtual environment if missing
-if not exist ".venv\Scripts\python.exe" (
-    echo [*] Creating dedicated Python virtual environment (.venv)...
-    python -m venv .venv
-    if %errorlevel% neq 0 (
-        echo [ERROR] Failed to create virtual environment.
-        pause
-        exit /b 1
+where npm.cmd >nul 2>nul
+if errorlevel 1 (
+    echo [ERROR] npm was not found. Reinstall Node.js LTS and try again.
+    goto :error
+)
+
+if not exist "%PYTHON%" (
+    where py >nul 2>nul
+    if errorlevel 1 (
+        echo [ERROR] Python 3 is required. Install Python and enable the Python launcher.
+        goto :error
     )
+    echo [*] Creating Python virtual environment...
+    py -3 -m venv "%PROJECT_DIR%\.venv"
+    if errorlevel 1 goto :error
 )
 
-:: 3. Install / upgrade required dependencies
-echo [*] Checking and verifying package dependencies...
-call .venv\Scripts\python.exe -m pip install -q --disable-pip-version-check -r requirements.txt
-if %errorlevel% neq 0 (
-    echo [WARNING] Direct requirements install had warnings, ensuring core packages...
-    call .venv\Scripts\python.exe -m pip install -q flask pandas openpyxl werkzeug
+"%PYTHON%" -c "import flask, pandas, openpyxl, werkzeug" >nul 2>nul
+if errorlevel 1 (
+    echo [*] Installing Python dependencies...
+    "%PYTHON%" -m pip install -r "%PROJECT_DIR%\requirements.txt"
+    if errorlevel 1 goto :error
 )
 
-:: 4. Ensure .env exists with APP_SECRET_KEY
-if not exist ".env" (
-    echo [*] Generating secure local .env configuration...
-    if exist ".env.example" (
-        copy /y .env.example .env >nul
-    ) else (
-        echo APP_SECRET_KEY=msedcl_production_secure_key_2026_antigravity > .env
-        echo DATABASE_PATH=quality_audit.db >> .env
-        echo PORT=5000 >> .env
-        echo MAX_UPLOAD_MB=25 >> .env
+if not exist "%PROJECT_DIR%\.env" if exist "%PROJECT_DIR%\.env.example" (
+    echo [*] Creating local .env from .env.example...
+    copy "%PROJECT_DIR%\.env.example" "%PROJECT_DIR%\.env" >nul
+    if errorlevel 1 goto :error
+)
+
+if not exist "%PROJECT_DIR%\frontend\node_modules\vite\bin\vite.js" (
+    echo [*] Installing React frontend dependencies...
+    pushd "%PROJECT_DIR%\frontend"
+    call npm.cmd ci
+    if errorlevel 1 (
+        popd
+        goto :error
     )
+    popd
 )
 
-:: 5. Run database schema migrations
-echo [*] Checking database tables and running schema migrations...
-call .venv\Scripts\python.exe -c "import migrate_db; migrate_db.run_migrations('quality_audit.db')" >nul 2>nul
+echo [*] Initializing the database and applying migrations...
+"%PYTHON%" -c "from config.settings import settings; from init_db import init_db; from migrate_db import run_migrations; init_db(settings.database_path); run_migrations(settings.database_path)"
+if errorlevel 1 goto :error
 
-:: 6. Launch Application Server
 echo.
-echo ===============================================================================
-echo  Application is running at: http://127.0.0.1:5000
-echo  Default Admin Login:       Username: qaadmin   Password: password123
-echo ===============================================================================
-echo.
-echo Press Ctrl+C in this window to stop the server anytime.
-echo.
+echo [*] Starting Flask API at http://127.0.0.1:5000 ...
+start "MSEDCL Flask API" cmd /k "cd /d ""%PROJECT_DIR%"" && ""%PYTHON%"" app.py"
 
-start "" "http://127.0.0.1:5000"
-call .venv\Scripts\python.exe app.py
+echo [*] Starting React frontend at http://127.0.0.1:5173 ...
+start "MSEDCL React UI" cmd /k "cd /d ""%PROJECT_DIR%\frontend"" && npm.cmd run dev -- --host 127.0.0.1 --port 5173 --strictPort"
 
+echo [*] Opening the React sign-in page...
+timeout /t 3 /nobreak >nul
+start "" "http://127.0.0.1:5173/login"
+
+echo.
+echo React UI:  http://127.0.0.1:5173/login
+echo Flask app: http://127.0.0.1:5000
+echo Close both server windows to stop the application.
+echo.
 pause
+exit /b 0
+
+:error
+echo.
+echo [ERROR] Setup could not be completed. Review the message above.
+pause
+exit /b 1
